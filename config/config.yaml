@@ -1,0 +1,2 @@
+# 是否输出 Debug() 级别的日志
+isDebug: false
