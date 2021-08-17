@@ -1,0 +1,12 @@
+syntax = "proto3";
+package kv;
+option go_package = "kv/";
+service User {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+}
+message GetUserRequest {
+  string key = 1;
+}
+message GetUserResponse {
+  string value = 1;
+}
