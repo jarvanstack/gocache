@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strconv"
 	"testing"
-
-	"github.com/dengjiawen8955/gocache/src/consistenthash"
 )
 
 func main() {
