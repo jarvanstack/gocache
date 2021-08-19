@@ -7,6 +7,8 @@ import (
 
 	"github.com/dengjiawen8955/go_utils/erru"
 	"github.com/dengjiawen8955/go_utils/netu"
+	"github.com/dengjiawen8955/gocache/pb/pbgc"
+	"google.golang.org/protobuf/proto"
 )
 
 //服务端
@@ -34,47 +36,64 @@ func (g *GoCache) Run(addr string) {
 		if err != nil {
 			panic(erru.NewError("net.Accept", ""))
 		}
-		go g.handler(c)
+		cc := netu.NewConnCtx(c)
+		go func(cc *netu.ConnCtx) {
+			for {
+				g.handler(cc)
+			}
+		}(cc)
 	}
 
 }
-func (g *GoCache) handler(conn net.Conn) {
+func (g *GoCache) handler(cc *netu.ConnCtx) {
+	req := &pbgc.GoCacheRequest{}
+	resp := &pbgc.GoCacheResponse{}
 	defer func() {
+		//拿到错误, 返回错误.
 		e := recover()
 		if e != nil {
 			erru.Trace(e)
+			e, _ := e.(*erru.Err)
 			fmt.Printf("err=%#v\n", e)
+			resp.Code = e.Code
+			resp.Value = []byte(e.Msg)
+			b, err := proto.Marshal(resp)
+			if err != nil {
+				fmt.Printf("err=%#v\n", err)
+			}
+			cc.WriteData(b)
 		}
 	}()
-	cc := netu.NewConnCtx(conn)
-	//conn可以循环利用
-	for {
-		data, _ := cc.ReadData()
-		//2.切割(先用这种笨办法)
-		splits := strings.Split(string(data), " ")
-		if len(splits) >= 2 {
-			//不区分大小写比较
-			if strings.EqualFold("get", splits[0]) {
-				//GET
-				d, ok := g.Map[splits[1]]
-				if !ok {
-					d = []byte("NOT EXISTS " + splits[1])
-				}
-				cc.WriteData(d)
-			} else if strings.EqualFold("set", splits[0]) {
-				//SET
-				var d []byte
-				if len(splits) >= 3 {
-					g.Map[splits[1]] = []byte(splits[2])
-					d = []byte("OK")
-				} else {
-					d = []byte("NOT ENOUGH PARAMITERS")
-				}
-				cc.WriteData(d)
-			}
-		} else {
-			panic(erru.NewError("strings.Split", "split err while split request cmd"))
-		}
+	data, err := cc.ReadData()
+	if err != nil {
+		panic(erru.NewError("cc.ReadData", ""))
 	}
-
+	err = proto.Unmarshal(data, req)
+	if err != nil {
+		panic(erru.NewError("proto.Unmarshal", ""))
+	}
+	if strings.EqualFold(req.Cmd, "get") {
+		//get
+		b, ok := g.Map[req.Key]
+		if !ok {
+			panic(erru.NewError("KeyNotExists", "req key not exists "+req.Key))
+		}
+		resp.Code = "ok"
+		resp.Value = b
+		b2, err := proto.Marshal(resp)
+		if err != nil {
+			panic(erru.NewError("proto.Marshal", "proto.Marshal(resp)"))
+		}
+		cc.WriteData(b2)
+	} else if strings.EqualFold(req.Cmd, "set") {
+		//set
+		g.Map[req.Key] = req.Value
+		resp.Code = "ok"
+		resp.Value = nil
+		b2, err := proto.Marshal(resp)
+		if err != nil {
+			panic(erru.NewError("proto.Marshal", "proto.Marshal(resp)"))
+		}
+		cc.WriteData(b2)
+	}
 }

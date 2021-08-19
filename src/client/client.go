@@ -1,13 +1,14 @@
 package client
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 
 	"github.com/dengjiawen8955/go_utils/erru"
 	"github.com/dengjiawen8955/go_utils/netu"
+	"github.com/dengjiawen8955/gocache/pb/pbgc"
 	"github.com/dengjiawen8955/gocache/src/consistenthash"
+	"google.golang.org/protobuf/proto"
 )
 
 //GoCache封装调用
@@ -41,9 +42,9 @@ func NewClient(addrs ...string) *Client {
 // 1.找到哪个链接
 // 2.执行Set返回值
 // 3.读取set返回值
-func (c *Client) Set(key string, value []byte) ([]byte, error) {
+func (c *Client) Set(key string, value []byte) (*pbgc.GoCacheResponse, error) {
 	nodeKey, err := c.Circle.GetNode(key)
-	fmt.Printf("node=%#v\n", nodeKey)
+	// fmt.Printf("node=%#v\n", nodeKey)
 	if err != nil {
 		return nil, erru.NewError("Circle.GetNode", "hash circle GetNode() not exist")
 	}
@@ -51,21 +52,13 @@ func (c *Client) Set(key string, value []byte) ([]byte, error) {
 	if !ok {
 		return nil, erru.NewError("Map[nodeKey]", "Map[nodeKey] not ok")
 	}
-	msg := fmt.Sprintf("set %s ", key)
-	if err != nil {
-		return nil, erru.NewError("baseu.IntToBytes", "")
-	}
-	var b bytes.Buffer
-	b.WriteString(msg)
-	b.Write(value)
-	cc.WriteData(b.Bytes())
-	return cc.ReadData()
+	return pbReq(cc, "set", key, value)
 }
 
 //Get 方法
 // 1.找到哪个链接
 // 2.执行Get返回值
-func (c *Client) Get(key string) ([]byte, error) {
+func (c *Client) Get(key string) (*pbgc.GoCacheResponse, error) {
 	nodeKey, err := c.Circle.GetNode(key)
 	if err != nil {
 		return nil, erru.NewError("Circle.GetNode", "hash circle GetNode() not exist")
@@ -74,7 +67,30 @@ func (c *Client) Get(key string) ([]byte, error) {
 	if !ok {
 		return nil, erru.NewError("Map[nodeKey]", "Map[nodeKey] not ok")
 	}
-	msg := fmt.Sprintf("get %s", key)
-	cc.WriteData([]byte(msg))
-	return cc.ReadData()
+	return pbReq(cc, "get", key, nil)
+}
+
+//使用 proto buf 通信, 发送 gocache 请求. 并返回响应.
+func pbReq(cc *netu.ConnCtx, cmd, key string, value []byte) (*pbgc.GoCacheResponse, error) {
+	var err error
+	resp := &pbgc.GoCacheResponse{}
+	req := &pbgc.GoCacheRequest{
+		Cmd:   cmd,
+		Key:   key,
+		Value: value,
+	}
+	bs, err := proto.Marshal(req)
+	if err != nil {
+		return nil, erru.NewError("proto.Marshal", "proto.Marshal(req)")
+	}
+	cc.WriteData(bs)
+	respB, err := cc.ReadData()
+	if err != nil {
+		return nil, erru.NewError("ConnCtx.ReadData", "cc.ReadData while get key")
+	}
+	err = proto.Unmarshal(respB, resp)
+	if err != nil {
+		return nil, erru.NewError("proto.Unmarshal", "roto.Unmarshal get key resp")
+	}
+	return resp, nil
 }
