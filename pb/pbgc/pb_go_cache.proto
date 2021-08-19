@@ -1,0 +1,12 @@
+syntax = "proto3";
+package pbgc;
+option go_package = "pbgc/";
+message GoCacheRequest {
+  string cmd = 1;
+  string key = 2;
+  optional bytes value = 3;
+}
+message GoCacheResponse {
+  string code = 1;
+  optional bytes value = 3;
+}
